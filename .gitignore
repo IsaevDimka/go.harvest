@@ -1,2 +1,8 @@
+# Build files
+bin/
+
 .idea/
+rsa_key
+/api/http/index.html
+.run
 .env
