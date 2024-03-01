@@ -1,5 +1,5 @@
 module github.com/isaevdimka/go.harvest
 
-go 1.19
+go 1.22
 
-require github.com/joho/godotenv v1.4.0
+require github.com/joho/godotenv v1.5.1
