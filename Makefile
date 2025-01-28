@@ -53,6 +53,6 @@ vendor: ## bump vendor
 	$(V)GOPRIVATE=${VCS}/* go mod vendor
 	$(V)git add vendor go.mod go.sum
 
-.PHONY: vendor
+.PHONY: run
 run: ## run
 	$(V)./bin/go.harvest

@@ -11,10 +11,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
+
 	"github.com/joho/godotenv"
 )
 
 const timeFormat = "2006-01-02"
+
+var (
+	harvestAccountsIDs = map[string]string{
+		"LuckyGroup": "424855",
+		"CoinWithMe": "1274529",
+		"IsaevDimka": "616466",
+	}
+	harvestProjectIDs = map[string]string{
+		"LG":  "38921621",
+		"LT":  "38921618",
+		"CWM": "34544430",
+	}
+	harvestProjects = []string{"LG", "LT", "CWM"}
+	harvestAccounts = []string{"LuckyGroup", "IsaevDimka", "CoinWithMe"}
+	projects        = []string{"IGAMING", "INFRA", "LCH", "LPP", "PRIORITY", "LNA"}
+)
 
 type Config struct {
 	TimeZone         string
@@ -62,35 +80,42 @@ func main() {
 	}
 	spentDate := time.Now().In(loc).Format(timeFormat)
 
-	fmt.Print("Enter a Project:")
 	reader := bufio.NewReader(os.Stdin)
-	task.Project, err = reader.ReadString('\n')
-	if err != nil {
-		log.Fatalln("An error occured while reading input. Please try again")
-	}
 
-	fmt.Print("Enter a task ID:")
-	task.ID, err = reader.ReadString('\n')
-	if err != nil {
-		log.Fatalln("An error occured while reading input. Please try again")
+	var harvestAccount string
+	if err = survey.AskOne(&survey.Select{
+		Message: "Choose a harvest account:",
+		Options: harvestAccounts,
+	}, &harvestAccount); err != nil {
+		log.Fatalln("error:", err)
+	}
+	cfg.HarvestAccountID = harvestAccountsIDs[harvestAccount]
+
+	var harvestProject string
+	if err = survey.AskOne(&survey.Select{
+		Message: "Choose a harvest project:",
+		Options: harvestProjects,
+	}, &harvestProject); err != nil {
+		log.Fatalln("error:", err)
+	}
+	cfg.ProjectID = harvestProjectIDs[harvestProject]
+
+	if cfg.HarvestAccountID == "424855" {
+		if err = survey.AskOne(&survey.Select{
+			Message: "Choose a project:",
+			Options: projects,
+		}, &task.Project); err != nil {
+			log.Fatalln("error:", err)
+		}
+
+		fmt.Print("Enter a task ID:")
+		task.ID, _ = reader.ReadString('\n')
+		task.ID = strings.TrimSuffix(task.ID, "\n")
 	}
 
 	fmt.Print("Enter a message:")
-	task.Message, err = reader.ReadString('\n')
-	if err != nil {
-		log.Fatalln("An error occured while reading input. Please try again")
-		return
-	}
-
-	task.Project = strings.TrimSuffix(task.Project, "\n")
-	task.ID = strings.TrimSuffix(task.ID, "\n")
+	task.Message, _ = reader.ReadString('\n')
 	task.Message = strings.TrimSuffix(task.Message, "\n")
-
-	if task.Project == "" {
-		task.Project = cfg.DefaultProject
-	}
-
-	taskID := fmt.Sprintf("%s-%s", task.Project, task.ID)
 
 	u := url.URL{
 		Scheme: "https",
@@ -102,16 +127,27 @@ func main() {
 	q.Set("task_id", cfg.TaskID)
 	q.Set("user_id", cfg.UserID)
 	q.Set("spent_date", spentDate)
-	q.Set("notes", fmt.Sprintf("[%s] %s", taskID, task.Message))
-	q.Set("external_reference[group_id]", task.Project)
-	q.Set("external_reference[id]", taskID)
-	q.Set("external_reference[permalink]", fmt.Sprintf("%s/%s", cfg.PermalinkPrefix, taskID))
+
+	if cfg.HarvestAccountID == "424855" {
+		taskID := fmt.Sprintf("%s-%s", task.Project, task.ID)
+		q.Set("notes", fmt.Sprintf("[%s] %s", taskID, task.Message))
+		q.Set("external_reference[group_id]", task.Project)
+		q.Set("external_reference[id]", taskID)
+		q.Set("external_reference[permalink]", fmt.Sprintf("%s/%s", cfg.PermalinkPrefix, taskID))
+
+	} else {
+		var permalink string
+		fmt.Print("Enter a permalink:")
+		permalink, _ = reader.ReadString('\n')
+		permalink = strings.TrimSuffix(permalink, "\n")
+		q.Set("notes", task.Message)
+		q.Set("external_reference[permalink]", permalink)
+	}
 
 	u.RawQuery = q.Encode()
 
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", u.String(), nil)
-
 	if err != nil {
 		fmt.Println(err)
 		return
