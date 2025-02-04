@@ -18,31 +18,17 @@ import (
 
 const timeFormat = "2006-01-02"
 
-var (
-	harvestAccountsIDs = map[string]string{
-		"LuckyGroup": "424855",
-		"CoinWithMe": "1274529",
-		"IsaevDimka": "616466",
-	}
-	harvestProjectIDs = map[string]string{
-		"LG":  "38921621",
-		"LT":  "38921618",
-		"CWM": "34544430",
-	}
-	harvestProjects = []string{"LG", "LT", "CWM"}
-	harvestAccounts = []string{"LuckyGroup", "IsaevDimka", "CoinWithMe"}
-	projects        = []string{"IGAMING", "INFRA", "LCH", "LPP", "PRIORITY", "LNA"}
-)
-
 type Config struct {
-	TimeZone         string
-	PermalinkPrefix  string
-	DefaultProject   string
-	HarvestAccountID string
-	Token            string
-	ProjectID        string
-	TaskID           string
-	UserID           string
+	TimeZone        string
+	PermalinkPrefix string
+	Token           string
+	TaskID          string
+	Projects        []string
+	Accounts        []string
+	TaskPrefix      []string
+	AccountIDs      map[string]string
+	UserIDs         map[string]string
+	ProjectIDs      map[string]string
 }
 
 type JiraTask struct {
@@ -64,15 +50,23 @@ func main() {
 	}
 
 	cfg := Config{
-		TimeZone:         os.Getenv("TIMEZONE"),
-		PermalinkPrefix:  os.Getenv("PERMALINK_PREFIX"),
-		DefaultProject:   os.Getenv("DEFAULT_PROJECT"),
-		HarvestAccountID: os.Getenv("HARVEST_ACCOUNT_ID"),
-		Token:            os.Getenv("TOKEN"),
-		ProjectID:        os.Getenv("PROJECT_ID"),
-		TaskID:           os.Getenv("TASK_ID"),
-		UserID:           os.Getenv("USER_ID"),
+		TimeZone:        os.Getenv("TIMEZONE"),
+		PermalinkPrefix: os.Getenv("PERMALINK_PREFIX"),
+		Token:           os.Getenv("TOKEN"),
+		TaskID:          os.Getenv("TASK_ID"),
+		Projects:        strings.Split(os.Getenv("PROJECTS"), ","),
+		Accounts:        strings.Split(os.Getenv("ACCOUNTS"), ","),
+		TaskPrefix:      strings.Split(os.Getenv("TASK_PREFIX"), ","),
+		AccountIDs:      splitMap(os.Getenv("ACCOUNT_IDS")),
+		UserIDs:         splitMap(os.Getenv("USER_IDS")),
+		ProjectIDs:      splitMap(os.Getenv("PROJECT_IDS")),
 	}
+
+	var (
+		projectID string
+		accountID string
+		userID    string
+	)
 
 	loc, err := time.LoadLocation(cfg.TimeZone)
 	if err != nil {
@@ -82,28 +76,28 @@ func main() {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	var harvestAccount string
+	var account string
 	if err = survey.AskOne(&survey.Select{
 		Message: "Choose a harvest account:",
-		Options: harvestAccounts,
-	}, &harvestAccount); err != nil {
+		Options: cfg.Accounts,
+	}, &account); err != nil {
 		log.Fatalln("error:", err)
 	}
-	cfg.HarvestAccountID = harvestAccountsIDs[harvestAccount]
+	accountID = cfg.AccountIDs[account]
 
-	var harvestProject string
+	var project string
 	if err = survey.AskOne(&survey.Select{
 		Message: "Choose a harvest project:",
-		Options: harvestProjects,
-	}, &harvestProject); err != nil {
+		Options: cfg.Projects,
+	}, &project); err != nil {
 		log.Fatalln("error:", err)
 	}
-	cfg.ProjectID = harvestProjectIDs[harvestProject]
+	projectID = cfg.ProjectIDs[project]
 
-	if cfg.HarvestAccountID == "424855" {
+	if account == "LuckyGroup" {
 		if err = survey.AskOne(&survey.Select{
-			Message: "Choose a project:",
-			Options: projects,
+			Message: "Choose a task prefix:",
+			Options: cfg.TaskPrefix,
 		}, &task.Project); err != nil {
 			log.Fatalln("error:", err)
 		}
@@ -117,18 +111,24 @@ func main() {
 	task.Message, _ = reader.ReadString('\n')
 	task.Message = strings.TrimSuffix(task.Message, "\n")
 
+	// todo: for CoinWithMe=
+	// todo: for IsaevDimka=
+	userID = cfg.UserIDs[account]
+
+	// todo: refactor cfg.TaskID
+
 	u := url.URL{
 		Scheme: "https",
 		Host:   "api.harvestapp.com",
 		Path:   "v2/time_entries",
 	}
 	q := u.Query()
-	q.Set("project_id", cfg.ProjectID)
+	q.Set("project_id", projectID)
 	q.Set("task_id", cfg.TaskID)
-	q.Set("user_id", cfg.UserID)
+	q.Set("user_id", userID)
 	q.Set("spent_date", spentDate)
 
-	if cfg.HarvestAccountID == "424855" {
+	if account == "LuckyGroup" {
 		taskID := fmt.Sprintf("%s-%s", task.Project, task.ID)
 		q.Set("notes", fmt.Sprintf("[%s] %s", taskID, task.Message))
 		q.Set("external_reference[group_id]", task.Project)
@@ -152,7 +152,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	req.Header.Add("Harvest-Account-Id", cfg.HarvestAccountID)
+	req.Header.Add("Harvest-Account-Id", accountID)
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", cfg.Token))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Accept", "application/json")
@@ -170,4 +170,19 @@ func main() {
 		return
 	}
 	fmt.Println(string(body))
+}
+
+func splitMap(v string) map[string]string {
+	m := make(map[string]string)
+	pairs := strings.Split(v, ",")
+	for _, pair := range pairs {
+		keyValue := strings.SplitN(pair, "=", 2)
+		if len(keyValue) == 2 {
+			key := keyValue[0]
+			value := keyValue[1]
+			m[key] = value
+		}
+	}
+
+	return m
 }
